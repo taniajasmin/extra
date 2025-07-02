@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exixtensional Crisis Assistant</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.20.15/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // Mock Web Speech API for local testing (replace with actual API in browser)
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SpeechSynthesisUtterance = window.SpeechSynthesisUtterance;
+
+    function InterviewAssistant() {
+      const [transcript, setTranscript] = useState('');
+      const [answer, setAnswer] = useState('');
+      const [isListening, setIsListening] = useState(false);
+      const [profile, setProfile] = useState({
+        skills: '',
+        experience: '',
+        preferences: '',
+        education: '',
+        projects: ''
+      });
+      const [isProfileSaved, setIsProfileSaved] = useState(false);
+
+      // Load profile from localStorage on mount
+      useEffect(() => {
+        const savedProfile = localStorage.getItem('interviewProfile');
+        if (savedProfile) {
+          setProfile(JSON.parse(savedProfile));
+          setIsProfileSaved(true);
+        }
+      }, []);
+
+      // Save profile to localStorage
+      const saveProfile = () => {
+        localStorage.setItem('interviewProfile', JSON.stringify(profile));
+        setIsProfileSaved(true);
+        alert('Profile saved successfully!');
+      };
+
+      // Handle profile input changes
+      const handleProfileChange = (e) => {
+        setProfile({ ...profile, [e.target.name]: e.target.value });
+      };
+
+      // Start/stop speech recognition
+      const toggleListening = () => {
+        if (!SpeechRecognition) {
+          alert('Speech Recognition API not supported in this browser.');
+          return;
+        }
+
+        if (isListening) {
+          setIsListening(false);
+        } else {
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = false;
+          recognition.lang = 'en-US';
+
+          recognition.onresult = async (event) => {
+            const last = event.results.length - 1;
+            const question = event.results[last][0].transcript;
+            setTranscript(question);
+
+            // Generate answer using Gemini API
+            const response = await generateAnswer(question);
+            setAnswer(response);
+
+            // Read answer aloud (optional, can be muted)
+            const utterance = new SpeechSynthesisUtterance(response);
+            window.speechSynthesis.speak(utterance);
+          };
+
+          recognition.onerror = (event) => {
+            console.error('Speech recognition error:', event.error);
+            setIsListening(false);
+          };
+
+          recognition.onend = () => {
+            if (isListening) recognition.start();
+          };
+
+          recognition.start();
+          setIsListening(true);
+        }
+      };
+
+      // Generate answer using Gemini API
+      const generateAnswer = async (question) => {
+        const GEMINI_API_KEY = 'AIzaSyAhkR6QthYooktOkILWQFj_pkPlJDgkE0Q'; 
+        const endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+
+        const prompt = `
+          You are an interview assistant. Based on the user's profile and the question asked, provide a concise answer in 2-3 lines.
+          User Profile:
+          Skills: ${profile.skills}
+          Experience: ${profile.experience}
+          Preferences: ${profile.preferences}
+          Education: ${profile.education}
+          Projects: ${profile.projects}
+          Question: ${question}
+          Keep the tone professional yet natural, and tailor the answer to the user's profile.
+        `;
+
+        try {
+          const response = await fetch(`${endpoint}?key=${GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }]
+            })
+          });
+
+          const data = await response.json();
+          return data.candidates[0].content.parts[0].text.trim();
+        } catch (error) {
+          console.error('Error generating answer:', error);
+          return 'Sorry, I couldn’t generate an answer. Please try again.';
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-100 flex flex-col items-center p-4">
+          <h1 className="text-3xl font-bold mb-4">Interview Assistant</h1>
+
+          {!isProfileSaved ? (
+            <div className="w-full max-w-md bg-white p-6 rounded-lg shadow-md">
+              <h2 className="text-xl font-semibold mb-4">Enter Your Profile</h2>
+              <textarea
+                name="skills"
+                placeholder="Skills (e.g., Python, React, AI)"
+                value={profile.skills}
+                onChange={handleProfileChange}
+                className="w-full p-2 mb-2 border rounded"
+                rows="3"
+              />
+              <textarea
+                name="experience"
+                placeholder="Experience (e.g., 2 years as a software developer)"
+                value={profile.experience}
+                onChange={handleProfileChange}
+                className="w-full p-2 mb-2 border rounded"
+                rows="3"
+              />
+              <textarea
+                name="preferences"
+                placeholder="Preferences (e.g., I enjoy building web apps)"
+                value={profile.preferences}
+                onChange={handleProfileChange}
+                className="w-full p-2 mb-2 border rounded"
+                rows="3"
+              />
+              <textarea
+                name="education"
+                placeholder="Education (e.g., B.S. in Computer Science, 2023)"
+                value={profile.education}
+                onChange={handleProfileChange}
+                className="w-full p-2 mb-2 border rounded"
+                rows="3"
+              />
+              <textarea
+                name="projects"
+                placeholder="Projects (e.g., Built a food tracking app)"
+                value={profile.projects}
+                onChange={handleProfileChange}
+                className="w-full p-2 mb-2 border rounded"
+                rows="3"
+              />
+              <button
+                onClick={saveProfile}
+                className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+              >
+                Save Profile
+              </button>
+            </div>
+          ) : (
+            <div className="w-full max-w-md bg-white p-6 rounded-lg shadow-md">
+              <button
+                onClick={toggleListening}
+                className={`w-full p-2 rounded text-white ${
+                  isListening ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'
+                }`}
+              >
+                {isListening ? 'Stop Listening' : 'Start Listening'}
+              </button>
+              <div className="mt-4">
+                <h3 className="font-semibold">Question Detected:</h3>
+                <p className="p-2 bg-gray-100 rounded">{transcript || 'No question detected yet.'}</p>
+              </div>
+              <div className="mt-4">
+                <h3 className="font-semibold">Answer:</h3>
+                <p className="p-2 bg-gray-100 rounded">{answer || 'No answer generated yet.'}</p>
+              </div>
+              <button
+                onClick={() => setIsProfileSaved(false)}
+                className="w-full mt-4 bg-gray-500 text-white p-2 rounded hover:bg-gray-600"
+              >
+                Edit Profile
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.render(<InterviewAssistant />, document.getElementById('root'));
+  </script>
+</body>
+</html>
